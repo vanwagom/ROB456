@@ -186,13 +186,16 @@ class Driver:
 			if clear_theta is not None:
 				command.angular.z = clear_theta
 				command.linear.x = tanh(matching_distance)
+				print(f"Turning to face {clear_theta:.2f} and moving {matching_distance:.2f}")
 			else:
 				# There is no clear path, stop the robot
 				command.linear.x = 0.0
+				print("No clear path, stopping")
 		
 		# If no obstacle between robot and target, continue forward
 		else:
 			command.linear.x = 0.1
+			print(f"No obstacle, moving forward")
 		
 		return command
 
