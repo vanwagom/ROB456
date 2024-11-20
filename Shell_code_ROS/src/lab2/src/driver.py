@@ -148,39 +148,51 @@ class Driver:
 
 		target_x = target[0]
 		target_y = target[1]
+		target_distance = sqrt(target_x ** 2 + target_y ** 2)
 		target_theta = atan2(target_y, target_x)
 		shoulder_width = 0.38
-		heading_theta = target_theta
 
-		# Init the angles and distances for storing points infront of rthe robot
-		points_in_front = {
+		# Init the angles and distances for storing points infront of the robot
+		points = {
 			"thetas": [],
 			"distances": []
 		}
 
 		# Code to determine whether the robot should rotate, or move forward. loop through ranges
 		for i, range in enumerate(lidar.ranges):
+			if not np.isfinite(range) or range <= 0:
+				continue # Skip invalid values
+
 			theta = lidar.angle_min + ( lidar.angle_increment * i )
-			x = range * np.cos(theta)
-			y = range * np.sin(theta)	
-
-			if abs(y) <= shoulder_width / 2:
-				points_in_front["thetas"].append(theta)
-				points_in_front["distances"].append(range)
+			points["thetas"].append(theta)
+			points["distances"].append(range)
 		
-		# For the smallest range in points_in_front, determine the angle of the scan and use that to determine where the robot should go
-		min_range_in_front = min(points_in_front["distances"])
-		min_theta_in_front = points_in_front["thetas"][points_in_front["distances"].index(min_range_in_front)]
+		# Find the distance reading that matches the target theta in points, find the closest point in the direction of the target
+		closest_theta = np.argmin([abs(theta - target_theta) for theta in points["thetas"]])
+		matching_distance = points["distances"][closest_theta]
 
-		# If the minimum range is less than 3.0 m, then the robot should turn
-		if min_range_in_front < 3:
-			if min_theta_in_front >= 0.0:
-				command.angular.z = 0.1
+
+		if matching_distance < target_distance:
+			# There is something in the way between the robot and the target, search through the points to find an clear path
+			sorted_points = np.argsort([abs(theta - target_theta) for theta in points["thetas"]])
+			
+			clear_theta = None
+			for i in sorted_points:
+				if points["distances"][i] > target_distance:
+					clear_theta = points["thetas"][i]
+					break
+			
+			# If there is a clear path, turn to face the clear path and move the distance of the object
+			if clear_theta is not None:
+				command.angular.z = clear_theta
+				command.linear.x = tanh(matching_distance)
 			else:
-				command.angular.z -= 0.1
+				# There is no clear path, stop the robot
+				command.linear.x = 0.0
+		
+		# If no obstacle between robot and target, continue forward
 		else:
 			command.linear.x = 0.1
-
 		
 		return command
 
