@@ -75,3 +75,37 @@ if __name__ == '__main__':
 
 	# Now that everything is wired up, we just spin.
 	rospy.spin()
+
+
+
+
+""" # Here is the straight motion of the robot
+	
+		shoulder_width = 0.38
+		num_readings = len(lidar.ranges)
+
+		# Init the angles and distances for storing points infront of rthe robot
+		points_in_front = {
+			"thetas": [],
+			"distances": []
+		}
+
+		# Determine which readings are in front of the robot (within 19 cm of center)
+		for i in range(num_readings):
+			theta = lidar.angle_min + ( lidar.angle_increment * i )
+			distance = lidar.ranges[i]
+
+			# Convert polar to cartesian
+			x = distance * np.sin(theta)
+			y = distance * np.cos(theta)
+
+			# Check if point is in front of robot and append to lists if so
+			if abs(y) <= shoulder_width / 2:
+				points_in_front["thetas"].append(theta)
+				points_in_front["distances"].append(distance)
+		
+		# Determine the minimum distance to an obstacle in front of the robot
+		min_distance_in_front = min(points_in_front["distances"])
+
+		# Determine speed based on distance to closest obstacle
+		command.linear.x = tanh( (min_distance_in_front - 1.0) / 1.0 ) """
