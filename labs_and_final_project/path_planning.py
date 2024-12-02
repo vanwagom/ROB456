@@ -179,17 +179,12 @@ def dijkstra(im, robot_loc, goal_loc):
     # While the list is not empty - use a break for if the node is the end node
     while priority_queue:
         # Get the current best node off of the list
-        current_node = heapq.heappop(priority_queue)
-        # Pop returns the value and the i, j
-        node_score = current_node[0]
-        node_ij = current_node[1]
+        node_score, node_ij = heapq.heappop(priority_queue)
 
-        # Showing how to get this data back out of visited
-        visited_triplet = visited[node_ij]
-        visited_distance = visited_triplet[0]
-        visited_parent = visited_triplet[1]
-        visited_closed_yn = visited_triplet[2]
-
+        # Get the data back out of visited for the current best node in priority_queue
+        visited_distance, visited_parent, visited_closed_yn = visited[node_ij]
+        
+        
         # TODO
         #  Step 1: Break out of the loop if node_ij is the goal node
         #  Step 2: If this node is closed, skip it
@@ -198,27 +193,69 @@ def dijkstra(im, robot_loc, goal_loc):
         #  Lec 8_1: Planning, at the end
         #  https://docs.google.com/presentation/d/1pt8AcSKS2TbKpTAVV190pRHgS_M38ldtHQHIltcYH6Y/edit#slide=id.g18d0c3a1e7d_0_0
         # YOUR CODE HERE
+        
+        # Break the loop if the current node is the location node
+        if node_ij == goal_loc:
+            break
+        
+        # If the node is closed skip
+        if visited_closed_yn:
+            continue
+        
+        # Set the current node as visited (need to create new tuple as they are immutable)
+        visited[node_ij] = (visited_distance, visited_parent, True)
 
-    # Now check that we actually found the goal node
-    try_2 = goal_loc
-    if not goal_loc in visited:
-        # TODO: Deal with not being able to get to the goal loc
-        # BEGIN SOLULTION
-        best = 1e30
-        for v in visited:
-            if v[0] < best:
-                best = v[0]
-                try_2 = v[1]
-        return dijkstra(im, robot_loc, try_2)
-        raise ValueError(f"Goal {goal_loc} not reached")
-        return []
+        # The travel cost between nodes, this is 1 as we are traveling 1 pixel between nodes (each pixel is a node)
+        edge_cost = 1
 
-    path = []
-    path.append(goal_loc)
+        # Iterate over each of the neighbor nodes, determine if it is travelable (ie not out of bouds or a wall), then find it's distance from the current node and distance to the goal.
+        for adj_node in eight_connected(node_ij):
+            
+            # Skip out-of-bounds nodes
+            if adj_node[0] < 0 or adj_node[1] < 0 or adj_node[0] >= im.shape[1] or adj_node[1] >= im.shape[0]:
+                continue
+
+            # Skip the node if it's not free 
+            if not is_free(im, adj_node):  
+                continue
+
+            new_distance = visited_distance + edge_cost
+
+            # Check if the adj node has been visited and if it's closer than the current node
+            if adj_node not in visited or new_distance < visited[adj_node][0]:
+                visited[adj_node] = (new_distance, node_ij, False)
+                heapq.heappush(priority_queue, (new_distance, adj_node))       
+        
+    
+    # TODO: Deal with not being able to get to the goal loc
+    # BEGIN SOLULTION
+
+    if goal_loc not in visited:
+        
+        # Find the closest node to the goal that wasn't closed
+        closest_node = min(
+            (node for node in visited if not visited[node][2]),
+            key=lambda n: visited[n][0],
+            default=None
+        )
+
+        if closest_node is None:
+            raise ValueError(" No reachable nodes from the start location")
+
+        return dijkstra(im, robot_loc, closest_node)
+
     # TODO: Build the path by starting at the goal node and working backwards
     # YOUR CODE HERE
 
-    return path
+    # Construct the path by backtracking from the goal location
+    path = []
+    travel = goal_loc # Start at the goal location
+    while travel is not None:
+        path.append(travel)
+        travel = visited[travel][1] # Get the parent of the current node to travel backwards trhough the path
+    
+    return path[::-1] # Reverse the path so it's in the right order and return it
+
 
 
 def open_image(im_name):

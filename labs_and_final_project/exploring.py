@@ -54,7 +54,7 @@ def plot_with_explore_points(im_threshhold, zoom=1.0, robot_loc=None, explore_po
     # Show original and thresholded image
     if explore_points is not None:
         for p in explore_points:
-            axs[1].plot(p[0], p[1], '.b', markersize=2)
+            axs[1].plot(p[1], p[0], '.b', markersize=1)
 
     for i in range(0, 2):
         if robot_loc is not None:
@@ -110,26 +110,133 @@ def is_reachable(im, pix):
     #  False otherwise
     # You can use four or eight connected - eight will return more points
     # YOUR CODE HERE
-    return False
+    
+    # Init start bool to False
+    reachable = False
+    
+    # If any of the 8 neighbors are free, return True
+    for adj_node in path_planning.eight_connected(pix):
+        if path_planning.is_free(im, adj_node) is True:
+            reachable = True
+    
+    return reachable
 
 
 def find_all_possible_goals(im):
-    """ Find all of the places where you have a pixel that is unseen next to a pixel that is free
-    It is probably easier to do this, THEN cull it down to some reasonable places to try
-    This is because of noise in the map - there may be some isolated pixels
-    @param im - thresholded image
-    @return dictionary or list or binary image of possible pixels"""
-
-    # YOUR CODE HERE
-
-
-def find_best_point(im, possible_points, robot_loc):
-    """ Pick one of the unseen points to go to
-    @param im - thresholded image
-    @param possible_points - possible points to chose from
-    @param robot_loc - location of the robot (in case you want to factor that in)
+    """Find all pixels that are unknown and adjacent to a free pixel.
+    @param im: Thresholded image (numpy array).
+    @return: List of possible goal pixel coordinates (tuples).
     """
-    # YOUR CODE HERE
+
+    # List of 8 neighbor offsets
+    neighbors = [(x, y) for x in [-1, 0, 1] for y in [-1, 0, 1] if (x, y) != (0, 0)]
+
+    # Create mask for unknown pixels
+    unknown_value = 128 
+    unknown_mask = ( im == unknown_value)
+
+    # Create mask for free pixels
+    free_mask = (im == 255)
+
+    # Init a mask for valid neighbors
+    neighbor_mask = np.zeros_like(im, dtype=bool)
+
+    # Accumulate free pixel neighbors
+    for di, dj in neighbors:
+        rolled = np.roll(np.roll(free_mask, di, axis=0), dj, axis=1)
+        if di < 0:
+            rolled[di:, :] = False
+        elif di > 0:
+            rolled[:di, :] = False
+        if dj < 0:
+            rolled[:, dj:] = False
+        elif dj > 0:
+            rolled[:, :dj] = False
+        neighbor_mask |= rolled
+
+    # Combine masks to find unknown pixels next to free pixels
+    possible_goal_mask = neighbor_mask & unknown_mask
+    
+    # Find coordinates of possible goal pixels
+    possible_goals = np.argwhere(possible_goal_mask)
+
+    # Filter using is_reachable
+    possible_goals = [tuple(coord) for coord in possible_goals if is_reachable(im, tuple(coord))]
+
+    return possible_goals
+
+
+from scipy.ndimage import label
+
+def find_best_point(im, possible_points, robot_loc, min_area=100):
+    """
+    Pick the best unseen point to go to, considering proximity and connectivity.
+    
+    @param im: Thresholded image (numpy array).
+    @param possible_points: List of possible points to choose from.
+    @param robot_loc: Location of the robot as a tuple (x, y).
+    @param min_area: Minimum size of the connected region a point must belong to.
+    @return: The best point as a tuple (x, y).
+    """
+
+     # Init best point stored as a tuple (distance, point)
+    best_point = [np.inf, (0, 0)]
+    
+    # Iterate over the possible points and search for the closest unknown point to the robot
+    for point in possible_points:
+
+        # Calculate the distance from the robot to the point
+        dist = np.sqrt((point[0] - robot_loc[0])**2 + (point[1] - robot_loc[1])**2)
+        
+        # If the distance is less than the current best point, update the best point
+        if dist < best_point[0]:
+            best_point = [dist, point]
+    
+    return best_point[1]
+
+
+
+
+
+
+    """ a = min_area // 2
+
+    neighbors = [(x, y) for x in range(-a, a, 1) for y in range(-a, a, 1) if (x, y) != (0, 0)]
+
+    # Create a binary mask for possible points
+    possible_mask = np.zeros_like(im, dtype=bool)
+    valid_regions_mask = np.zeros_like(im, dtype=bool)
+
+    for point in possible_points:
+        possible_mask[point[0], point[1]] = True
+
+    # Accumulate free pixel neighbors
+    for di, dj in neighbors:
+        rolled = np.roll(np.roll(possible_mask, di, axis=0), dj, axis=1)
+        if di < 0:
+            rolled[di:, :] = False
+        elif di > 0:
+            rolled[:di, :] = False
+        if dj < 0:
+            rolled[:, dj:] = False
+        elif dj > 0:
+            rolled[:, :dj] = False
+        valid_regions_mask |= rolled
+
+    # Compute distances for all valid points
+    valid_points = np.argwhere(valid_regions_mask)
+    distances = np.sqrt((valid_points[:, 0] - robot_loc[0])**2 + (valid_points[:, 1] - robot_loc[1])**2)
+
+    # Find the point with the minimum distance
+    if len(distances) > 0:
+        best_idx = np.argmin(distances)
+        best_point = tuple(valid_points[best_idx])
+        return best_point
+    else:
+        # No valid points found
+        return None """
+
+            
 
 
 def find_waypoints(im, path):
@@ -140,6 +247,41 @@ def find_waypoints(im, path):
 
     # Again, no right answer here
     # YOUR CODE HERE
+    
+    return path
+
+
+
+
+def compute_curvature(points):
+    """
+    Compute curvature based on the angular change between consecutive segments.
+    """
+    vectors = np.diff(points, axis=0)  # Calculate vectors between consecutive points
+    angles = np.arctan2(vectors[:, 1], vectors[:, 0])  # Calculate angles of vectors
+    curvatures = np.abs(np.diff(angles))  # Angular change (curvature proxy)
+    return np.concatenate(([0], curvatures))  # Add 0 curvature for the first point
+
+def adaptive_resample(points, curvature_threshold=0.1, dense_factor=10):
+    """
+    Resample a path based on curvature.
+    - points: Nx2 array of (x, y) coordinates.
+    - curvature_threshold: Curvature value above which more points are added.
+    - dense_factor: Number of additional points for high-curvature sections.
+    """
+    new_points = [points[0]]
+    for i in range(1, len(points)):
+        segment = np.linspace(points[i - 1], points[i], dense_factor)
+        curvature = compute_curvature(points[i - 1:i + 1])
+        if curvature[1] > curvature_threshold:
+            new_points.extend(segment)
+        else:
+            new_points.append(points[i])
+    return np.array(new_points)
+    
+    
+    
+    
 
 if __name__ == '__main__':
     # Doing this here because it is a different yaml than JN
